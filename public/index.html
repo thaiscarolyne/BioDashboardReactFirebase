@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard Bioimpedância - Família</title>
+  <style>
+    :root { --bg:#0f172a; --card:#0b1220; --accent:#06b6d4; --muted:#94a3b8; color-scheme: dark; }
+    html, body, #root { height: 100%; margin: 0; font-family: Inter, system-ui, sans-serif; background: linear-gradient(180deg,#071023 0%, #071429 100%); color: #e6eef8; }
+    .container { max-width: 1100px; margin: 32px auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
+    .card { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 16px; box-shadow: 0 6px 18px rgba(2,6,23,0.6); }
+    .grid { display: grid; grid-template-columns: 1fr 420px; gap: 16px; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    input, select, button { font-size: 14px; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.05); color: inherit; width: 100%; box-sizing: border-box; }
+    button { background: var(--accent); color: #0f172a; font-weight: bold; border: none; cursor: pointer; }
+    .btn-group { display: flex; gap: 10px; }
+    .btn-backup { background: #10b981; color: white; width: auto; padding: 8px 16px; }
+    .btn-import { background: #6366f1; color: white; width: auto; padding: 8px 16px; }
+    .member-pill { padding: 8px 16px; border-radius: 999px; background: rgba(255,255,255,0.05); cursor: pointer; margin-right: 8px; margin-bottom: 8px; display: inline-block; }
+    .member-pill.active { background: linear-gradient(90deg,var(--accent),#7c3aed); color: #04111a; font-weight: bold; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+    th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .row { display: flex; gap: 8px; }
+    .custom-legend { display: flex; gap: 15px; justify-content: center; margin: 10px 0; font-size: 13px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .box { width: 30px; height: 12px; border-radius: 2px; }
+    @media(max-width:980px){ .grid { grid-template-columns: 1fr; } }
+  </style>
+
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+<div id="root">Carregando...</div>
+
+<script src="firebase-config.js"></script>
+
+<script>
+const {useState, useEffect, useRef} = React;
+
+// Agora o Firebase usa a variável global vinda do outro arquivo
+if (!firebase.apps.length) {
+    firebase.initializeApp(window.firebaseConfig);
+}
+const db = firebase.firestore();
+
+function App(){
+  const [data, setData] = useState({members:[], measurements:[]});
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef();
+
+  useEffect(() => { 
+    const unsubMembers = db.collection("members").onSnapshot(snap => {
+      const mList = snap.docs.map(d => ({id: d.id, ...d.data()}));
+      setData(prev => ({...prev, members: mList}));
+      if(!selectedMember && mList.length > 0) setSelectedMember(mList[0].id);
+      setLoading(false);
+    });
+    const unsubMeas = db.collection("measurements").onSnapshot(snap => {
+      setData(prev => ({...prev, measurements: snap.docs.map(d => ({id: d.id, ...d.data()}))}));
+    });
+    return () => { unsubMembers(); unsubMeas(); };
+  }, [selectedMember]);
+
+  const handleExport = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `backup_bio_${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const imported = JSON.parse(evt.target.result);
+        if (confirm("Importar dados? Isso atualizará registros existentes.")) {
+          setLoading(true);
+          if(imported.members) {
+            for (const m of imported.members) {
+              const {id, ...mObj} = m;
+              await db.collection("members").doc(id).set(mObj, {merge: true});
+            }
+          }
+          if(imported.measurements) {
+            for (const meas of imported.measurements) {
+              const {id, ...measObj} = meas;
+              await db.collection("measurements").doc(id).set(measObj, {merge: true});
+            }
+          }
+          alert("Importado com sucesso!");
+          setLoading(false);
+        }
+      } catch (err) { alert("Erro ao processar arquivo."); setLoading(false); }
+    };
+    reader.readAsText(file);
+  };
+
+  if(loading) return React.createElement("div", {style:{padding:20}}, "Sincronizando...");
+
+  return React.createElement('div', {className:'container'},
+    React.createElement('header', null,
+      React.createElement('div', null,
+        React.createElement('h1', null, 'BioDashboard Família'),
+        React.createElement('div', {style:{fontSize:12, color:'var(--muted)'}}, 'Controle de Medições de Bioimpedância')
+      ),
+      React.createElement('div', {className:'btn-group'},
+        React.createElement('input', {type:'file', ref:fileInputRef, style:{display:'none'}, onChange:handleImport, accept:'.json'}),
+        React.createElement('button', {className:'btn-import', onClick: () => fileInputRef.current.click()}, '📥 Importar JSON'),
+        React.createElement('button', {className:'btn-backup', onClick: handleExport}, '💾 Backup JSON')
+      )
+    ),
+    React.createElement('div', {className:'grid'},
+      React.createElement('div', null,
+        React.createElement('div', {className:'card'},
+          React.createElement('h3', null, 'Membros'),
+          data.members.map(m => React.createElement('div', {
+            key: m.id, className: 'member-pill' + (m.id === selectedMember ? ' active' : ''),
+            onClick: () => setSelectedMember(m.id)
+          }, m.name)),
+          React.createElement('hr', {style:{margin:'20px 0', opacity:0.1}}),
+          React.createElement(MeasurementForm, {selectedMember})
+        ),
+        React.createElement('div', {className:'card', style:{marginTop:20}},
+          React.createElement('h3', null, 'Histórico de Medições'),
+          React.createElement(MeasurementsTable, { measurements: data.measurements, selectedMember })
+        )
+      ),
+      React.createElement('div', null,
+        React.createElement('div', {className:'card'},
+          React.createElement(MemberCharts, {measurements: data.measurements, selectedMember})
+        )
+      )
+    )
+  );
+}
+
+function MeasurementForm({selectedMember}){
+  const [form, setForm] = useState({ weight:'', bodyfat:'', muscle:'', date: new Date().toISOString().slice(0,10) });
+  const submit = async (e) => {
+    e.preventDefault();
+    if(!selectedMember) return alert('Selecione um membro');
+    const clean = (v) => parseFloat(String(v).replace(',','.')) || 0;
+    await db.collection("measurements").add({
+      ...form, memberId: selectedMember, weight: clean(form.weight), bodyfat: clean(form.bodyfat), muscle: clean(form.muscle)
+    });
+    setForm({...form, weight:'', bodyfat:'', muscle:''});
+  };
+  return React.createElement('form', {onSubmit: submit},
+    React.createElement('div', {className:'row'},
+      React.createElement('div', {style:{flex:1}}, React.createElement('label', null, 'Data'), React.createElement('input', {type:'date', value:form.date, onChange:e=>setForm({...form, date:e.target.value})})),
+      React.createElement('div', {style:{flex:1}}, React.createElement('label', null, 'Peso (kg)'), React.createElement('input', {value:form.weight, onChange:e=>setForm({...form, weight:e.target.value}), placeholder:'0.0'}))
+    ),
+    React.createElement('div', {className:'row', style:{marginTop:10}},
+      React.createElement('div', null, React.createElement('label', null, '% Gordura'), React.createElement('input', {value:form.bodyfat, onChange:e=>setForm({...form, bodyfat:e.target.value})})),
+      React.createElement('div', null, React.createElement('label', null, '% Músculo'), React.createElement('input', {value:form.muscle, onChange:e=>setForm({...form, muscle:e.target.value})}))
+    ),
+    React.createElement('button', {type:'submit', style:{marginTop:15}}, 'Registrar Medição')
+  );
+}
+
+function MeasurementsTable({measurements, selectedMember}) {
+  const [editId, setEditId] = useState(null);
+  const [temp, setTemp] = useState({});
+  const rows = measurements.filter(r => r.memberId === selectedMember).sort((a,b) => b.date.localeCompare(a.date));
+
+  const save = async () => {
+    const clean = (v) => parseFloat(String(v).replace(',','.')) || 0;
+    const {id, ...dataToSave} = temp;
+    await db.collection("measurements").doc(editId).set({
+      ...dataToSave, weight: clean(temp.weight), bodyfat: clean(temp.bodyfat), muscle: clean(temp.muscle)
+    }, {merge: true});
+    setEditId(null);
+  };
+
+  return React.createElement('table', null,
+    React.createElement('thead', null, React.createElement('tr', null, ['Data', 'Peso', '%Gord', '%Músc', 'Ações'].map(h => React.createElement('th', {key:h}, h)))),
+    React.createElement('tbody', null, rows.map(r => 
+      editId === r.id ? 
+        React.createElement('tr', {key:r.id},
+          React.createElement('td', null, React.createElement('input', {type:'date', value:temp.date, onChange:e=>setTemp({...temp, date:e.target.value})})),
+          React.createElement('td', null, React.createElement('input', {style:{width:60}, value:temp.weight, onChange:e=>setTemp({...temp, weight:e.target.value})})),
+          React.createElement('td', null, React.createElement('input', {style:{width:60}, value:temp.bodyfat, onChange:e=>setTemp({...temp, bodyfat:e.target.value})})),
+          React.createElement('td', null, React.createElement('input', {style:{width:60}, value:temp.muscle, onChange:e=>setTemp({...temp, muscle:e.target.value})})),
+          React.createElement('td', null, React.createElement('button', {onClick:save, style:{padding:5}}, '✅'))
+        ) :
+        React.createElement('tr', {key:r.id},
+          React.createElement('td', null, r.date),
+          React.createElement('td', null, r.weight, 'kg'),
+          React.createElement('td', null, r.bodyfat, '%'),
+          React.createElement('td', null, r.muscle, '%'),
+          React.createElement('td', null, 
+            React.createElement('span', {style:{cursor:'pointer', marginRight:12}, onClick:()=>{setEditId(r.id); setTemp({...r});}}, '✏️'),
+            React.createElement('span', {style:{cursor:'pointer'}, onClick:async ()=>{if(confirm("Excluir?")) await db.collection("measurements").doc(r.id).delete()}}, '🗑️')
+          )
+        )
+    ))
+  );
+}
+
+function MemberCharts({measurements, selectedMember}){
+  const chartRef = useRef();
+  const chartInstance = useRef(null);
+  const [showAll, setShowAll] = useState(false);
+
+  useEffect(() => {
+    if(!selectedMember || !chartRef.current) return;
+
+    const parseNum = (val) => {
+        const n = parseFloat(String(val).replace(',', '.'));
+        return isNaN(n) ? 0 : n;
+    };
+
+    let filtered = measurements
+      .filter(r => r.memberId === selectedMember && r.date)
+      .sort((a,b) => a.date.localeCompare(b.date));
+
+    if (!showAll) {
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      const limit = oneYearAgo.toISOString().split('T')[0];
+      filtered = filtered.filter(r => r.date >= limit);
+    }
+
+    if(chartInstance.current) {
+        chartInstance.current.destroy();
+        chartInstance.current = null;
+    }
+
+    if (filtered.length === 0) return;
+
+    try {
+      const ctx = chartRef.current.getContext('2d');
+      chartInstance.current = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: filtered.map(r => r.date),
+          datasets: [
+            { label: 'Peso (kg)', data: filtered.map(r => parseNum(r.weight)), borderColor: '#36a2eb', backgroundColor: 'rgba(54, 162, 235, 0.1)', fill: true, tension: 0.3, yAxisID: 'y' },
+            { 
+              label: 'Gordura (kg)', 
+              data: filtered.map(r => {
+                  const val = (parseNum(r.weight) * parseNum(r.bodyfat) / 100);
+                  return isNaN(val) ? 0 : val.toFixed(2);
+              }), 
+              borderColor: '#ff6384', backgroundColor: '#ff6384', tension: 0.3, yAxisID: 'y2' 
+            },
+            { 
+              label: 'Massa muscular (kg)', 
+              data: filtered.map(r => {
+                  const val = (parseNum(r.weight) * parseNum(r.muscle) / 100);
+                  return isNaN(val) ? 0 : val.toFixed(2);
+              }), 
+              borderColor: '#ff9f40', backgroundColor: '#ff9f40', tension: 0.3, yAxisID: 'y2' 
+            }
+          ]
+        },
+        options: { 
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+          scales: { 
+            x: { ticks: { color: '#94a3b8' } },
+            y: { type:'linear', position:'left', title:{display:true, text:'Peso (kg)', color:'#36a2eb'} },
+            y2: { type:'linear', position:'right', grid:{drawOnChartArea:false}, title:{display:true, text:'Componentes (kg)', color:'#ff9f40'} }
+          }
+        }
+      });
+    } catch (e) { console.error("Falha ao renderizar gráfico:", e); }
+
+    return () => { if(chartInstance.current) chartInstance.current.destroy(); };
+  }, [measurements, selectedMember, showAll]);
+
+  const memberHasData = measurements.some(r => r.memberId === selectedMember);
+
+  return React.createElement('div', null,
+    React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}},
+        React.createElement('h3', null, 'Evolução - Gráficos'),
+        React.createElement('button', {style:{width:'auto', fontSize:11}, onClick:()=>setShowAll(!showAll)}, showAll ? 'Ver Último Ano' : 'Ver Tudo')
+    ),
+    React.createElement('div', {className:'custom-legend'},
+      React.createElement('div', {className:'legend-item'}, React.createElement('div', {className:'box', style:{backgroundColor:'#36a2eb'}}), 'Peso (kg)'),
+      React.createElement('div', {className:'legend-item'}, React.createElement('div', {className:'box', style:{backgroundColor:'#ff6384'}}), 'Gordura (kg)'),
+      React.createElement('div', {className:'legend-item'}, React.createElement('div', {className:'box', style:{backgroundColor:'#ff9f40'}}), 'Massa muscular (kg)')
+    ),
+    !memberHasData ? 
+      React.createElement('div', {style:{padding:'40px 0', textAlign:'center', color:'var(--muted)'}}, 'Sem registros para este membro.') :
+      React.createElement('div', {style:{height:300, position:'relative'}}, React.createElement('canvas', {ref: chartRef}))
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
