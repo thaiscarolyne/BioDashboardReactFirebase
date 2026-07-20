@@ -2,7 +2,8 @@
 
 Este projeto é um dashboard interativo para monitoramento de bioimpedância, focado no acompanhamento da evolução de massa muscular, peso e gordura corporal de membros da família. Desenvolvido com React e Firebase, ele permite uma visualização clara do progresso físico ao longo do tempo.
 
-<img width="1118" height="816" alt="image" src="https://github.com/user-attachments/assets/91554e7a-2aca-4971-99ea-f72d8333718b" />
+<img width="1152" height="852" alt="image" src="https://github.com/user-attachments/assets/3e0dbd7b-8614-4fbb-b864-74ad2ac78d3d" />
+
 
 ## ✨ Funcionalidades
 
@@ -100,9 +101,8 @@ Se encontrar erros ao tentar fazer o deploy, siga estes passos:
 *   **Erro: "No currently active project"**
     Você precisa associar a pasta local ao projeto correto do Firebase. Execute:
     ```bash
-    firebase use bioimpedancia-1c259
+    firebase use --add
     ```
-    *(Ou use `firebase use --add` para escolher interativamente).*
 
 *   **Erro: "Failed to list Firebase projects" ou erro "401/400" nos logs**
     Geralmente indica que a sua sessão do terminal expirou. Force o login de reautenticação:
