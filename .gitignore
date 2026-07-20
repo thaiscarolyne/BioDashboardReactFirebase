@@ -69,7 +69,10 @@ node_modules/
 .dataconnect
 
 # Ignorar as credenciais do Firebase
+public/firebase-config.js
 firebase-config.js
 
 # Ignorar todos os arquivos de backup JSON
 backup_bio_*.json
+*.json.backup
+

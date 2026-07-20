@@ -80,6 +80,29 @@ GitHub Action: Selecione No (a menos que queira automatizar o deploy).
 3. Publicação
 Sempre que fizer uma alteração e quiser atualizar o site online:
 
-Bash
-
+```bash
 firebase deploy
+```
+
+### 🔍 Solução de Problemas no Deploy
+
+Se encontrar erros ao tentar fazer o deploy, siga estes passos:
+
+*   **Erro: "No currently active project"**
+    Você precisa associar a pasta local ao projeto correto do Firebase. Execute:
+    ```bash
+    firebase use bioimpedancia-1c259
+    ```
+    *(Ou use `firebase use --add` para escolher interativamente).*
+
+*   **Erro: "Failed to list Firebase projects" ou erro "401/400" nos logs**
+    Geralmente indica que a sua sessão do terminal expirou. Force o login de reautenticação:
+    *   No **PowerShell / CMD**:
+        ```powershell
+        firebase login --reauth
+        ```
+    *   No **Git Bash / MINGW64** (caso o login interativo falhe):
+        ```bash
+        firebase login --reauth --no-localhost
+        ```
+        *(Copie o link gerado, autorize no navegador e cole o código de resposta no terminal).*

@@ -25,7 +25,29 @@
     .custom-legend { display: flex; gap: 15px; justify-content: center; margin: 10px 0; font-size: 13px; }
     .legend-item { display: flex; align-items: center; gap: 6px; }
     .box { width: 30px; height: 12px; border-radius: 2px; }
-    @media(max-width:980px){ .grid { grid-template-columns: 1fr; } }
+
+    /* Delta Cards */
+    .delta-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 16px 0; }
+    .delta-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px; padding: 16px; text-align: center; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+    .delta-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+    .delta-card-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .delta-card-value { font-size: 22px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .delta-card-sub { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .delta-positive { color: #34d399; }
+    .delta-negative { color: #f87171; }
+    .delta-neutral { color: var(--muted); }
+    @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+    .delta-card { animation: fadeInUp 0.4s ease forwards; }
+    .delta-card:nth-child(2) { animation-delay: 0.08s; }
+    .delta-card:nth-child(3) { animation-delay: 0.16s; }
+
+    /* Filter Pills */
+    .filter-group { display: flex; gap: 6px; flex-wrap: wrap; }
+    .filter-pill { padding: 6px 14px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); transition: all 0.2s ease; width: auto; }
+    .filter-pill:hover { background: rgba(255,255,255,0.1); color: #e6eef8; }
+    .filter-pill.active { background: linear-gradient(135deg, var(--accent), #7c3aed); color: #0f172a; border-color: transparent; }
+
+    @media(max-width:980px){ .grid { grid-template-columns: 1fr; } .delta-cards { grid-template-columns: 1fr; } }
   </style>
 
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -48,10 +70,22 @@ if (!firebase.apps.length) {
 }
 const db = firebase.firestore();
 
+// Helper: filtra medições por período
+function filterByPeriod(measurements, period) {
+  if (period === 'all') return measurements;
+  const now = new Date();
+  const offsets = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
+  const months = offsets[period] || 12;
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+  const limit = cutoff.toISOString().split('T')[0];
+  return measurements.filter(r => r.date >= limit);
+}
+
 function App(){
   const [data, setData] = useState({members:[], measurements:[]});
   const [selectedMember, setSelectedMember] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('1y');
   const fileInputRef = useRef();
 
   useEffect(() => { 
@@ -126,17 +160,21 @@ function App(){
             key: m.id, className: 'member-pill' + (m.id === selectedMember ? ' active' : ''),
             onClick: () => setSelectedMember(m.id)
           }, m.name)),
+          React.createElement(DeltaCards, { measurements: data.measurements, selectedMember }),
           React.createElement('hr', {style:{margin:'20px 0', opacity:0.1}}),
           React.createElement(MeasurementForm, {selectedMember})
         ),
         React.createElement('div', {className:'card', style:{marginTop:20}},
-          React.createElement('h3', null, 'Histórico de Medições'),
-          React.createElement(MeasurementsTable, { measurements: data.measurements, selectedMember })
+          React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10}},
+            React.createElement('h3', {style:{margin:0}}, 'Histórico de Medições'),
+            React.createElement(PeriodFilter, { period, onChange: setPeriod })
+          ),
+          React.createElement(MeasurementsTable, { measurements: data.measurements, selectedMember, period })
         )
       ),
       React.createElement('div', null,
         React.createElement('div', {className:'card'},
-          React.createElement(MemberCharts, {measurements: data.measurements, selectedMember})
+          React.createElement(MemberCharts, {measurements: data.measurements, selectedMember, period, onPeriodChange: setPeriod})
         )
       )
     )
@@ -167,10 +205,125 @@ function MeasurementForm({selectedMember}){
   );
 }
 
-function MeasurementsTable({measurements, selectedMember}) {
+function DeltaCards({measurements, selectedMember}) {
+  const [deltaFilter, setDeltaFilter] = useState('last');
+  const parseNum = (val) => { const n = parseFloat(String(val).replace(',', '.')); return isNaN(n) ? 0 : n; };
+
+  const sorted = measurements
+    .filter(r => r.memberId === selectedMember && r.date)
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  if (sorted.length < 2) {
+    const label = sorted.length === 0 ? 'Sem medições registradas.' : 'Primeira medição — sem comparação disponível.';
+    return React.createElement('div', null,
+      React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10, marginTop:12}},
+        React.createElement('span', {style:{fontSize:13, fontWeight:600, color:'var(--muted)'}}, 'Variação'),
+        React.createElement(PeriodFilter, { period: deltaFilter, onChange: setDeltaFilter, showLast: true })
+      ),
+      React.createElement('div', {className: 'delta-cards', style:{gridTemplateColumns:'1fr'}},
+        React.createElement('div', {className: 'delta-card'},
+          React.createElement('div', {className: 'delta-card-value delta-neutral', style:{fontSize:14}}, label)
+        )
+      )
+    );
+  }
+
+  // Find the comparison measurement based on filter
+  const curr = sorted[0];
+  let prev;
+  if (deltaFilter === 'last') {
+    prev = sorted[1];
+  } else if (deltaFilter === 'all') {
+    prev = sorted[sorted.length - 1];
+  } else {
+    // Find measurement closest to the selected period ago
+    const now = new Date();
+    const offsets = { '1m': 1, '3m': 3, '6m': 6, '1y': 12 };
+    const months = offsets[deltaFilter] || 12;
+    const targetDate = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    const targetStr = targetDate.toISOString().split('T')[0];
+    // From sorted (desc), find the measurement closest to targetStr
+    const candidates = sorted.filter(r => r !== curr);
+    if (candidates.length === 0) { prev = sorted[1]; }
+    else {
+      prev = candidates.reduce((best, r) => {
+        const diffBest = Math.abs(new Date(best.date) - targetDate);
+        const diffR = Math.abs(new Date(r.date) - targetDate);
+        return diffR < diffBest ? r : best;
+      }, candidates[0]);
+    }
+  }
+
+  // If prev is the same as curr (edge case), fall back to sorted[1]
+  if (prev === curr && sorted.length > 1) prev = sorted[1];
+
+  const currWeight = parseNum(curr.weight);
+  const prevWeight = parseNum(prev.weight);
+  const currFat = currWeight * parseNum(curr.bodyfat) / 100;
+  const prevFat = prevWeight * parseNum(prev.bodyfat) / 100;
+  const currMuscle = currWeight * parseNum(curr.muscle) / 100;
+  const prevMuscle = prevWeight * parseNum(prev.muscle) / 100;
+
+  const deltas = [
+    { label: 'Δ Peso', value: currWeight - prevWeight, unit: 'kg', invertColor: true },
+    { label: 'Δ Gordura', value: currFat - prevFat, unit: 'kg', invertColor: true },
+    { label: 'Δ Massa Muscular', value: currMuscle - prevMuscle, unit: 'kg', invertColor: false }
+  ];
+
+  const formatDelta = (v) => (v > 0 ? '+' : '') + v.toFixed(2);
+  const getClass = (val, invert) => {
+    if (Math.abs(val) < 0.01) return 'delta-neutral';
+    const isUp = val > 0;
+    if (invert) return isUp ? 'delta-negative' : 'delta-positive';
+    return isUp ? 'delta-positive' : 'delta-negative';
+  };
+  const getArrow = (val) => {
+    if (Math.abs(val) < 0.01) return '→';
+    return val > 0 ? '▲' : '▼';
+  };
+
+  return React.createElement('div', null,
+    React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10, marginTop:12}},
+      React.createElement('span', {style:{fontSize:13, fontWeight:600, color:'var(--muted)'}}, 'Variação'),
+      React.createElement(PeriodFilter, { period: deltaFilter, onChange: setDeltaFilter, showLast: true })
+    ),
+    React.createElement('div', {className: 'delta-cards'},
+      deltas.map(d => React.createElement('div', {className: 'delta-card', key: d.label},
+        React.createElement('div', {className: 'delta-card-label'}, d.label),
+        React.createElement('div', {className: 'delta-card-value ' + getClass(d.value, d.invertColor)},
+          React.createElement('span', null, getArrow(d.value)),
+          React.createElement('span', null, formatDelta(d.value) + ' ' + d.unit)
+        ),
+        React.createElement('div', {className: 'delta-card-sub'}, prev.date + ' → ' + curr.date)
+      ))
+    )
+  );
+}
+
+function PeriodFilter({period, onChange, showLast}) {
+  const options = [];
+  if (showLast) options.push({value: 'last', label: 'Última'});
+  options.push(
+    {value: '1m', label: '1M'},
+    {value: '3m', label: '3M'},
+    {value: '6m', label: '6M'},
+    {value: '1y', label: '1A'},
+    {value: 'all', label: 'Tudo'}
+  );
+  return React.createElement('div', {className: 'filter-group'},
+    options.map(o => React.createElement('button', {
+      key: o.value,
+      className: 'filter-pill' + (period === o.value ? ' active' : ''),
+      onClick: () => onChange(o.value)
+    }, o.label))
+  );
+}
+
+function MeasurementsTable({measurements, selectedMember, period}) {
   const [editId, setEditId] = useState(null);
   const [temp, setTemp] = useState({});
-  const rows = measurements.filter(r => r.memberId === selectedMember).sort((a,b) => b.date.localeCompare(a.date));
+  const allRows = measurements.filter(r => r.memberId === selectedMember);
+  const rows = filterByPeriod(allRows, period).sort((a,b) => b.date.localeCompare(a.date));
 
   const save = async () => {
     const clean = (v) => parseFloat(String(v).replace(',','.')) || 0;
@@ -206,10 +359,9 @@ function MeasurementsTable({measurements, selectedMember}) {
   );
 }
 
-function MemberCharts({measurements, selectedMember}){
+function MemberCharts({measurements, selectedMember, period, onPeriodChange}){
   const chartRef = useRef();
   const chartInstance = useRef(null);
-  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     if(!selectedMember || !chartRef.current) return;
@@ -219,16 +371,11 @@ function MemberCharts({measurements, selectedMember}){
         return isNaN(n) ? 0 : n;
     };
 
-    let filtered = measurements
+    let allData = measurements
       .filter(r => r.memberId === selectedMember && r.date)
       .sort((a,b) => a.date.localeCompare(b.date));
 
-    if (!showAll) {
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      const limit = oneYearAgo.toISOString().split('T')[0];
-      filtered = filtered.filter(r => r.date >= limit);
-    }
+    const filtered = filterByPeriod(allData, period);
 
     if(chartInstance.current) {
         chartInstance.current.destroy();
@@ -277,14 +424,14 @@ function MemberCharts({measurements, selectedMember}){
     } catch (e) { console.error("Falha ao renderizar gráfico:", e); }
 
     return () => { if(chartInstance.current) chartInstance.current.destroy(); };
-  }, [measurements, selectedMember, showAll]);
+  }, [measurements, selectedMember, period]);
 
   const memberHasData = measurements.some(r => r.memberId === selectedMember);
 
   return React.createElement('div', null,
-    React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center'}},
-        React.createElement('h3', null, 'Evolução - Gráficos'),
-        React.createElement('button', {style:{width:'auto', fontSize:11}, onClick:()=>setShowAll(!showAll)}, showAll ? 'Ver Último Ano' : 'Ver Tudo')
+    React.createElement('div', {style:{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:10}},
+        React.createElement('h3', {style:{margin:0}}, 'Evolução - Gráficos'),
+        React.createElement(PeriodFilter, { period, onChange: onPeriodChange })
     ),
     React.createElement('div', {className:'custom-legend'},
       React.createElement('div', {className:'legend-item'}, React.createElement('div', {className:'box', style:{backgroundColor:'#36a2eb'}}), 'Peso (kg)'),
